@@ -1,6 +1,8 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { HanziData } from '../types';
+
+declare var HanziWriter: any;
 
 interface SearchProps {
   database: HanziData[];
@@ -9,16 +11,46 @@ interface SearchProps {
 const Search: React.FC<SearchProps> = ({ database }) => {
   const [query, setQuery] = useState('');
   const [selectedWord, setSelectedWord] = useState<HanziData | null>(null);
+  const strokeRef = useRef<HTMLDivElement>(null);
 
   const results = useMemo(() => {
     if (!query.trim()) return [];
     const q = query.toLowerCase();
     return database.filter(item => 
       item.simplified.includes(q) || 
-      item.forms[0].transcriptions.pinyin.toLowerCase().includes(q) ||
-      item.forms[0].meanings.some(m => m.toLowerCase().includes(q))
+      item.forms.some(f => f.transcriptions.pinyin.toLowerCase().includes(q)) ||
+      item.forms.some(f => f.meanings.some(m => m.toLowerCase().includes(q)))
     ).slice(0, 10);
   }, [query, database]);
+
+  useEffect(() => {
+    if (selectedWord && strokeRef.current) {
+      // Clear previous animations
+      strokeRef.current.innerHTML = '';
+
+      const chars = selectedWord.simplified.split('');
+      chars.forEach((char, index) => {
+        const charContainer = document.createElement('div');
+        const containerId = `search-stroke-${selectedWord.simplified}-${index}`;
+        charContainer.id = containerId;
+        charContainer.className = "inline-block mx-1 bg-white rounded-xl shadow-sm border border-slate-100 p-1";
+        strokeRef.current?.appendChild(charContainer);
+
+        const writer = HanziWriter.create(containerId, char, {
+          width: 90,
+          height: 90,
+          padding: 5,
+          strokeColor: '#4f46e5', // indigo-600
+          outlineColor: '#f1f5f9', // slate-100
+          radicalColor: '#f59e0b', // amber-500
+          showOutline: true,
+          delayBetweenStrokes: 150
+        });
+        
+        writer.animateCharacter();
+      });
+    }
+  }, [selectedWord]);
 
   return (
     <div className="relative">
@@ -70,47 +102,88 @@ const Search: React.FC<SearchProps> = ({ database }) => {
 
       {selectedWord && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fadeIn" onClick={() => setSelectedWord(null)}>
-          <div className="bg-white w-full max-w-lg rounded-3xl p-8 shadow-2xl relative" onClick={e => e.stopPropagation()}>
+          <div className="bg-slate-50 w-full max-w-lg rounded-3xl p-8 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-scrollbar" onClick={e => e.stopPropagation()}>
             <button 
               onClick={() => setSelectedWord(null)}
-              className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 text-xl"
+              className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 text-xl z-10"
             >
               <i className="fas fa-times"></i>
             </button>
+            
             <div className="text-center mb-8">
-              <span className="text-8xl font-bold text-slate-800">{selectedWord.simplified}</span>
-              <div className="mt-4 text-2xl font-bold text-indigo-600">{selectedWord.forms[0].transcriptions.pinyin}</div>
-            </div>
-            <div className="space-y-6">
-              <div>
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Meanings</h4>
-                <div className="text-slate-700 leading-relaxed font-medium">
-                  {selectedWord.forms[0].meanings.join(', ')}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Radical</h4>
-                  <div className="text-slate-700 font-bold text-xl">{selectedWord.radical}</div>
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Part of Speech</h4>
-                  <div className="text-slate-700 font-bold uppercase text-sm">{selectedWord.pos.join(' / ')}</div>
-                </div>
+              <div className="mb-6 flex flex-col items-center">
+                <div ref={strokeRef} className="flex justify-center items-center mb-4 min-h-[100px] flex-wrap gap-2"></div>
+                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Stroke Animation</div>
               </div>
               
-              {selectedWord.forms[0].classifiers && selectedWord.forms[0].classifiers.length > 0 && (
-                <div>
-                  <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Measure Words</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {selectedWord.forms[0].classifiers.map(c => (
-                      <span key={c} className="px-3 py-1 bg-amber-50 text-amber-700 rounded-lg text-xs font-bold border border-amber-100">
-                        {c}
-                      </span>
-                    ))}
+              <div className="flex flex-wrap justify-center gap-2 mb-6">
+                <span className="px-3 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg text-xs font-bold uppercase tracking-widest">
+                  Radical: {selectedWord.radical}
+                </span>
+                {selectedWord.pos.map(p => (
+                  <span key={p} className="px-3 py-1 bg-white border border-slate-200 text-indigo-600 rounded-lg text-xs font-bold uppercase tracking-widest">
+                    {p}
+                  </span>
+                ))}
+              </div>
+            </div>
+            
+            <div className="space-y-6">
+              {selectedWord.forms.map((form, fIdx) => (
+                <div key={fIdx} className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm relative overflow-hidden group">
+                  {selectedWord.forms.length > 1 && (
+                    <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[9px] font-black px-3 py-1 rounded-bl-xl uppercase">
+                      Form {fIdx + 1}
+                    </div>
+                  )}
+                  
+                  <div className="mb-5">
+                    <div className="text-3xl font-black text-indigo-900 mb-1 leading-none">{form.transcriptions.pinyin}</div>
+                    <div className="text-[10px] font-black text-slate-300 uppercase tracking-tighter">
+                      {form.transcriptions.numeric} • {form.transcriptions.bopomofo}
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest border-b border-slate-50 pb-1 flex items-center gap-2">
+                        <i className="fas fa-book-open text-[8px]"></i> Meanings
+                      </h4>
+                      <ul className="text-slate-700 font-medium text-base space-y-3">
+                        {form.meanings.map((m, idx) => (
+                          <li key={idx} className="flex items-start gap-3">
+                            <span className="text-indigo-400 font-black text-[8px] h-[1.5rem] flex items-center shrink-0">•</span>
+                            <span className="leading-tight pt-[0.1rem]">{m}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {form.classifiers && form.classifiers.length > 0 && (
+                      <div>
+                        <h4 className="text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest border-b border-slate-50 pb-1 flex items-center gap-2">
+                          <i className="fas fa-layer-group text-[8px]"></i> Measure Words
+                        </h4>
+                        <div className="flex flex-wrap gap-2 pt-1">
+                          {form.classifiers.map(c => (
+                            <span key={c} className="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-lg text-xs font-bold border border-amber-100 shadow-sm">
+                              {c}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
+              ))}
+
+              <div className="pt-4 flex flex-wrap gap-2 justify-center">
+                 {selectedWord.level.map(l => (
+                    <span key={l} className="px-3 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-black rounded-full uppercase tracking-widest">
+                       {l}
+                    </span>
+                 ))}
+              </div>
             </div>
           </div>
         </div>
