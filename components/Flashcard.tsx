@@ -1,6 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { HanziData, SRSItem } from '../types';
+
+declare var HanziWriter: any;
 
 interface FlashcardProps {
   word: HanziData;
@@ -23,6 +25,45 @@ const Flashcard: React.FC<FlashcardProps> = ({
 }) => {
   const [isFlipped, setIsFlipped] = useState(false);
   const [useTraditional, setUseTraditional] = useState(false);
+  const strokeRef = useRef<HTMLDivElement>(null);
+  const writersRef = useRef<any[]>([]);
+
+  // Clear writers and flip state on word change
+  useEffect(() => {
+    setIsFlipped(false);
+    writersRef.current = [];
+  }, [word.simplified]);
+
+  // Handle HanziWriter animation
+  useEffect(() => {
+    if (isFlipped && strokeRef.current) {
+      // Clear previous
+      strokeRef.current.innerHTML = '';
+      writersRef.current = [];
+
+      const chars = word.simplified.split('');
+      chars.forEach((char, index) => {
+        const charContainer = document.createElement('div');
+        charContainer.id = `stroke-${word.simplified}-${index}`;
+        charContainer.className = "inline-block mx-1 bg-white rounded-lg shadow-sm border border-slate-100 p-1";
+        strokeRef.current?.appendChild(charContainer);
+
+        const writer = HanziWriter.create(charContainer.id, char, {
+          width: 80,
+          height: 80,
+          padding: 5,
+          strokeColor: '#4f46e5', // indigo-600
+          outlineColor: '#f1f5f9', // slate-100
+          radicalColor: '#f59e0b', // amber-500
+          showOutline: true,
+          delayBetweenStrokes: 150
+        });
+        
+        writersRef.current.push(writer);
+        writer.animateCharacter();
+      });
+    }
+  }, [isFlipped, word.simplified]);
 
   // Keyboard Navigation
   useEffect(() => {
@@ -63,21 +104,17 @@ const Flashcard: React.FC<FlashcardProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isFlipped, hasNext, hasPrev, onNext, onPrev, onRate]);
 
-  const primaryForm = word.forms[0];
-
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-lg mx-auto">
-      {/* 
-        Card Container with fixed height. 
-      */}
+      {/* Card Container */}
       <div 
-        className="w-full h-[480px] card-flip-container cursor-pointer relative"
+        className="w-full h-[540px] card-flip-container cursor-pointer relative"
         onClick={() => setIsFlipped(!isFlipped)}
       >
         <div className={`card-flip-inner shadow-xl rounded-3xl w-full h-full ${isFlipped ? 'is-flipped' : ''}`}>
           
-          {/* Front Face - Only visible when not flipped */}
-          <div className={`card-face bg-white border border-slate-100 flex flex-col items-center justify-center p-8 transition-opacity duration-300 ${isFlipped ? 'opacity-0 invisible' : 'opacity-100'}`}>
+          {/* Front Face */}
+          <div className={`card-face bg-white border border-slate-100 flex flex-col items-center justify-center p-8 transition-opacity duration-300 ${isFlipped ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
             <div className="absolute top-6 left-6 flex flex-wrap gap-2">
               {word.level.map(l => (
                 <span key={l} className="px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-[10px] font-black uppercase tracking-widest">
@@ -93,64 +130,98 @@ const Flashcard: React.FC<FlashcardProps> = ({
             
             <div className="flex flex-col items-center">
               <span className="text-9xl font-bold mb-8 text-slate-800 transition-transform hover:scale-110 duration-500">
-                {useTraditional ? primaryForm.traditional : word.simplified}
+                {useTraditional ? word.forms[0].traditional : word.simplified}
               </span>
               <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest animate-pulse">
-                Press Space to flip
+                Click or Space to flip
               </p>
             </div>
             
-            <button 
-              onClick={(e) => { e.stopPropagation(); setUseTraditional(!useTraditional); }}
-              className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-black px-4 py-2 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all uppercase tracking-tighter shadow-sm border border-slate-100"
-            >
-              {useTraditional ? 'Use Simplified' : 'Use Traditional'}
-            </button>
+            {!isFlipped && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); setUseTraditional(!useTraditional); }}
+                className="absolute bottom-6 left-1/2 -translate-x-1/2 text-[10px] font-black px-4 py-2 rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all uppercase tracking-tighter shadow-sm border border-slate-100"
+              >
+                {useTraditional ? 'Show Simplified' : 'Show Traditional'}
+              </button>
+            )}
           </div>
 
-          {/* Back Face (Answer) - Only visible when flipped */}
-          <div className={`card-face card-back bg-indigo-50 border border-indigo-100 flex flex-col transition-opacity duration-300 ${!isFlipped ? 'opacity-0 invisible' : 'opacity-100'}`}>
-             <div className="w-full h-full overflow-y-auto custom-scrollbar p-8 flex flex-col items-center">
-                <div className="mb-6 text-center w-full shrink-0">
-                  <h3 className="text-5xl font-black text-indigo-900 mb-2">{primaryForm.transcriptions.pinyin}</h3>
-                  <div className="flex flex-wrap justify-center gap-2 mb-2">
-                    {word.pos.map(p => (
-                       <span key={p} className="text-indigo-600 text-[10px] uppercase tracking-widest font-black bg-white border border-indigo-100 px-2.5 py-1 rounded-lg shadow-sm">
-                         {p}
-                       </span>
-                    ))}
-                    <span className="text-slate-500 text-[10px] uppercase tracking-widest font-black bg-white border border-slate-100 px-2.5 py-1 rounded-lg shadow-sm">
-                      Radical: {word.radical}
-                    </span>
-                  </div>
+          {/* Back Face (Answer) */}
+          <div className={`card-face card-back bg-slate-50 border border-slate-200 flex flex-col transition-opacity duration-300 ${!isFlipped ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+             <div className="w-full h-full overflow-y-auto custom-scrollbar p-6 space-y-6">
+                
+                {/* Header Info */}
+                <div className="text-center">
+                   <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Pronunciation & Stroke Order</div>
+                   
+                   {/* Stroke Order Animation Container */}
+                   <div 
+                    ref={strokeRef}
+                    className="flex justify-center items-center mb-6 min-h-[90px] animate-fadeIn"
+                   ></div>
+
+                   <div className="flex flex-wrap justify-center gap-2">
+                      <span className="px-3 py-1 bg-white border border-slate-200 text-slate-500 rounded-lg text-xs font-bold uppercase tracking-widest">
+                        Radical: {word.radical}
+                      </span>
+                      {word.pos.map(p => (
+                        <span key={p} className="px-3 py-1 bg-white border border-slate-200 text-indigo-600 rounded-lg text-xs font-bold uppercase tracking-widest">
+                          {p}
+                        </span>
+                      ))}
+                   </div>
                 </div>
 
-                <div className="space-y-4 w-full text-left">
-                  <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-white shadow-sm">
-                    <h4 className="text-[10px] font-black text-slate-400 mb-3 uppercase tracking-widest border-b border-slate-50 pb-1">Meanings</h4>
-                    <ul className="text-slate-700 font-medium text-base space-y-3">
-                      {primaryForm.meanings.map((m, idx) => (
-                        <li key={idx} className="flex items-start gap-3">
-                          <span className="text-indigo-500 font-black mt-1.5 text-[10px]">●</span>
-                          <span className="leading-tight">{m}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {primaryForm.classifiers && primaryForm.classifiers.length > 0 && (
-                    <div className="bg-white/90 backdrop-blur-sm rounded-2xl p-6 border border-white shadow-sm">
-                      <h4 className="text-[10px] font-black text-slate-400 mb-3 uppercase tracking-widest border-b border-slate-50 pb-1">Measure Words</h4>
-                      <div className="flex flex-wrap gap-2 pt-1">
-                        {primaryForm.classifiers.map(c => (
-                          <span key={c} className="px-3 py-1.5 bg-amber-50 text-amber-700 rounded-xl text-sm font-bold border border-amber-100 shadow-sm">
-                            {c}
-                          </span>
-                        ))}
+                {/* Iterate over all forms */}
+                {word.forms.map((form, fIdx) => (
+                  <div key={fIdx} className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm relative overflow-hidden group">
+                    {word.forms.length > 1 && (
+                      <div className="absolute top-0 right-0 bg-indigo-600 text-white text-[9px] font-black px-3 py-1 rounded-bl-xl uppercase">
+                        Form {fIdx + 1}
+                      </div>
+                    )}
+                    
+                    <div className="mb-5">
+                      <div className="text-3xl font-black text-indigo-900 mb-1 leading-none">{form.transcriptions.pinyin}</div>
+                      <div className="text-[10px] font-black text-slate-300 uppercase tracking-tighter">
+                        {form.transcriptions.numeric} • {form.transcriptions.bopomofo}
                       </div>
                     </div>
-                  )}
-                </div>
+
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest border-b border-slate-50 pb-1 flex items-center gap-2">
+                          <i className="fas fa-book-open text-[8px]"></i> Meanings
+                        </h4>
+                        <ul className="text-slate-700 font-medium text-base space-y-3">
+                          {form.meanings.map((m, idx) => (
+                            <li key={idx} className="flex items-start gap-3">
+                              {/* Fixed Bullet Alignment */}
+                              <span className="text-indigo-400 font-black text-[8px] h-[1.5rem] flex items-center shrink-0">•</span>
+                              <span className="leading-tight pt-[0.1rem]">{m}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      {form.classifiers && form.classifiers.length > 0 && (
+                        <div>
+                          <h4 className="text-[10px] font-black text-slate-400 mb-2 uppercase tracking-widest border-b border-slate-50 pb-1 flex items-center gap-2">
+                            <i className="fas fa-layer-group text-[8px]"></i> Measure Words
+                          </h4>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {form.classifiers.map(c => (
+                              <span key={c} className="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-lg text-xs font-bold border border-amber-100 shadow-sm">
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
              </div>
           </div>
         </div>
@@ -202,7 +273,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
 
             <button 
               onClick={(e) => { e.stopPropagation(); setIsFlipped(true); }}
-              className="flex-1 py-4 px-8 rounded-2xl font-black text-lg bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95 h-full"
+              className="flex-1 py-4 px-8 rounded-2xl font-black text-lg bg-indigo-600 text-white shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all active:scale-95 h-full uppercase tracking-widest"
             >
               Show Answer [Space]
             </button>
@@ -219,7 +290,7 @@ const Flashcard: React.FC<FlashcardProps> = ({
         )}
       </div>
 
-      <div className="text-center text-slate-400 text-[10px] font-bold uppercase tracking-widest">
+      <div className="text-center text-slate-400 text-[10px] font-bold uppercase tracking-[0.2em]">
         <p>1-4: Rate • Space: Flip • Arrows: Navigate</p>
       </div>
     </div>
