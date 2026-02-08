@@ -1,17 +1,8 @@
-const CACHE_NAME = 'hanzi-master-v2';
+const CACHE_NAME = 'hanzi-master-v5';
 const ASSETS = [
-  './',
-  'index.html',
-  'manifest.json',
-  'index.tsx',
-  'App.tsx',
-  'data.ts',
-  'types.ts',
-  'components/Header.tsx',
-  'components/LevelSelector.tsx',
-  'components/Flashcard.tsx',
-  'components/Stats.tsx',
-  'components/Search.tsx',
+  '/',
+  '/index.html',
+  '/manifest.json',
   'https://cdn.tailwindcss.com',
   'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css',
   'https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js'
@@ -20,7 +11,10 @@ const ASSETS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS);
+      // Tenta adicionar cada asset individualmente para não falhar o conjunto todo
+      return Promise.allSettled(
+        ASSETS.map(url => cache.add(url))
+      );
     })
   );
   self.skipWaiting();
@@ -37,16 +31,14 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
-  // Estratégia: Cache First, falling back to Network
+  // Ignora extensões de browser ou outros esquemas
+  if (!event.request.url.startsWith('http')) return;
+
   event.respondWith(
     caches.match(event.request).then((response) => {
-      if (response) {
-        return response;
-      }
-      return fetch(event.request).catch(() => {
-        // Se falhar e for uma navegação, retorna o index.html do cache
+      return response || fetch(event.request).catch(() => {
         if (event.request.mode === 'navigate') {
-          return caches.match('index.html');
+          return caches.match('/');
         }
       });
     })
